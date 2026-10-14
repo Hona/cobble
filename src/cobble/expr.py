@@ -608,17 +608,28 @@ class Prod(Expr):
     def is_hermitian(self) -> bool:
         if self.hermitian:
             return True
+        # Flatten nested Prod nodes (e.g., (X * B) * X† -> [X, B, X†])
+        flat_factors: list[Expr] = []
+
+        def _collect(e: Expr) -> None:
+            if isinstance(e, Prod):
+                for sub in e.factors:
+                    _collect(sub)
+            else:
+                flat_factors.append(e)
+
+        _collect(self)
         # Conjugate-palindromic product (e.g., X† * X or A† * B * A with B Hermitian):
         # (F_1 ... F_n)† = F_n† ... F_1† == F_1 ... F_n
-        n = len(self.factors)
-        if n > 0 and (n % 2 == 0 or self.factors[n // 2].is_hermitian()):
+        n = len(flat_factors)
+        if n > 0 and (n % 2 == 0 or flat_factors[n // 2].is_hermitian()):
             if all(
-                Expr.structural_eq(Dagger(self.factors[i]), self.factors[n - 1 - i])
+                Expr.structural_eq(Dagger(flat_factors[i]), flat_factors[n - 1 - i])
                 for i in range(n // 2)
             ):
                 return True
         # if any factor is not Hermitian, then the product is not Hermitian
-        if not all(f.is_hermitian() for f in self.factors):
+        if not all(f.is_hermitian() for f in flat_factors):
             return False
         # if all factors are identical, then the product is Hermitian
         if all(f == self.factors[0] for f in self.factors):
